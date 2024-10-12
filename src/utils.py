@@ -391,3 +391,38 @@ def calc_csp(pain_data_train, nopain_data_train, test_data, components = 'full')
 
     return train_set, test_set
      
+
+
+def rf_classification(train_set, test_set, y_train, y_test, sub_id):
+    classifier = RandomForestClassifier(random_state = 42)
+    classifier.fit(train_set, y_train)
+    num_iterations = 100
+    acc = []
+    prec = []
+    rec = []
+    std_acc=[]
+    std_prec=[]
+    std_rec=[]
+    acc_max=[]
+    acc_min=[]
+    Y_PRED=[]
+    ACC=[]
+    test_sample_sizes = np.arange(1, len(test_set), 1)
+
+    for sample_size_index in range(len(test_sample_sizes)):
+        accuracy_sample_size = []
+        for iter in range(num_iterations):
+            indices = random.choices(range(len(test_set)), k=test_sample_sizes[sample_size_index])
+            test_data_boot = test_set[indices]
+            y_test_boot = y_test[indices]
+            y_pred = classifier.predict(test_data_boot)
+            Y_PRED.append(y_pred)
+            accuracy = accuracy_score(y_test_boot, y_pred)
+            accuracy_sample_size.append(accuracy)
+        ACC.append(accuracy_sample_size)
+        acc.append(np.mean(accuracy_sample_size))
+        std_acc.append(np.std(accuracy_sample_size))
+        acc_max.append(max(accuracy_sample_size))
+        acc_min.append(min(accuracy_sample_size))
+    #print(f"Maximum mean accuracy of {sub_id} is {np.max(acc)}")
+    return np.max(acc)

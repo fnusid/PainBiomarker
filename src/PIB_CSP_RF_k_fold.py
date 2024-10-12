@@ -8,7 +8,7 @@ import json
 import argparse
 from utils import parse_json
 import scipy.signal as signal
-from utils import load_dataset, sliding_window_augmentation, forward, PIB
+from utils import load_dataset, sliding_window_augmentation, forward, PIB, rf_classification, filtering
 import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, confusion_matrix, precision_score, recall_score, ConfusionMatrixDisplay
@@ -23,45 +23,6 @@ The usage of this script is
 
 python PIB_CSP_RF_k_fold.py --sub 822e28 > /home/remotelab/sid/codebase/code/PainBiomarker/runs/Experiments/PIB_CSP_RF/sub.txt
 '''
-
-
-
-def PIB(data):
-    # Apply filtering to data
-    filter_series = data  # List of 6 filtered bands, each shape (B, C, T)
-    
-    # Initialize empty list to store power features
-    feature_power = []
-
-    # Calculate total power in each band for each trial and each electrode
-    for i in range(len(filter_series)):  # Iterate over each filtered band
-        power_band = np.sum(np.abs(signal.hilbert(filter_series[i], axis=-1))**2, axis=-1)
-        feature_power.append(power_band)  # Collect power for current band
-    
-    # Stack features for all bands, shape will be (B, C, 6) after stacking
-    feature_power = np.stack(feature_power, axis=-1)  # Concatenates along new axis for frequency bands
-    
-    return feature_power
-
-def filtering(data_ecog):
-    # Butterworth filter for each band
-    sos_delta = signal.butter(2, [0.1, 4], btype='bandpass', analog=False, output='sos', fs=500)
-    sos_theta = signal.butter(2, [4, 8], btype='bandpass', analog=False, output='sos', fs=500)
-    sos_alpha = signal.butter(2, [8, 13], btype='bandpass', analog=False, output='sos', fs=500)
-    sos_beta = signal.butter(2, [13, 30], btype='bandpass', analog=False, output='sos', fs=500)
-    sos_gamma = signal.butter(2, [30, 60], btype='bandpass', analog=False, output='sos', fs=500)
-    sos_highgamma = signal.butter(2, [60, 200], btype='bandpass', analog=False, output='sos', fs=500)
-    
-    # Apply filtering to each frequency band for all trials/channels
-    delta_filter = signal.sosfilt(sos_delta, data_ecog, axis=-1)
-    theta_filter = signal.sosfilt(sos_theta, data_ecog, axis=-1)
-    alpha_filter = signal.sosfilt(sos_alpha, data_ecog, axis=-1)
-    beta_filter = signal.sosfilt(sos_beta, data_ecog, axis=-1)
-    gamma_filter = signal.sosfilt(sos_gamma, data_ecog, axis=-1)
-    highgamma_filter = signal.sosfilt(sos_highgamma, data_ecog, axis=-1)
-    
-    # Return list of filtered signals for each band
-    return [delta_filter, theta_filter, alpha_filter, beta_filter, gamma_filter, highgamma_filter]
 
 def spatial_filter(Ra, Rb):
     R = Ra + Rb
@@ -160,40 +121,6 @@ def calc_csp(pain_data_train, nopain_data_train, test_data, components = 'full')
 
     return train_set, test_set, y_train
 
-
-def rf_classification(train_set, test_set, y_train, y_test, sub_id):
-    classifier = RandomForestClassifier(random_state = 42)
-    classifier.fit(train_set, y_train)
-    num_iterations = 100
-    acc = []
-    prec = []
-    rec = []
-    std_acc=[]
-    std_prec=[]
-    std_rec=[]
-    acc_max=[]
-    acc_min=[]
-    Y_PRED=[]
-    ACC=[]
-    test_sample_sizes = np.arange(1, len(test_set), 1)
-
-    for sample_size_index in range(len(test_sample_sizes)):
-        accuracy_sample_size = []
-        for iter in range(num_iterations):
-            indices = random.choices(range(len(test_set)), k=test_sample_sizes[sample_size_index])
-            test_data_boot = test_set[indices]
-            y_test_boot = y_test[indices]
-            y_pred = classifier.predict(test_data_boot)
-            Y_PRED.append(y_pred)
-            accuracy = accuracy_score(y_test_boot, y_pred)
-            accuracy_sample_size.append(accuracy)
-        ACC.append(accuracy_sample_size)
-        acc.append(np.mean(accuracy_sample_size))
-        std_acc.append(np.std(accuracy_sample_size))
-        acc_max.append(max(accuracy_sample_size))
-        acc_min.append(min(accuracy_sample_size))
-    #print(f"Maximum mean accuracy of {sub_id} is {np.max(acc)}")
-    return np.max(acc)
 
 if __name__ == '__main__':
 
