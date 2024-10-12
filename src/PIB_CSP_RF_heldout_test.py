@@ -495,7 +495,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     sub_id = args.sub
     pain_data_train, nopain_data_train, pain_data_test, nopain_data_test = forward(sub_id)
-    breakpoint()
+    # breakpoint()
     test_data = np.concatenate((pain_data_test, nopain_data_test), axis = 0)
     y_test=np.concatenate([np.ones(pain_data_test.shape[0]),np.zeros(nopain_data_test.shape[0])])
     y_train = np.concatenate([np.ones(pain_data_train.shape[0]),np.zeros(nopain_data_train.shape[0])])
@@ -546,7 +546,7 @@ if __name__ == '__main__':
 
 
     # Plot the training and validation accuracies
-    breakpoint()
+    # breakpoint()
     plt.figure(figsize=(10, 6))
     plt.plot(n_estimators_range, mean_scores_train, label=f'Mean Train Accuracy (Max : {np.max(mean_scores_train)})', color='blue',linewidth=3)
     plt.fill_between(n_estimators_range, min_train, max_train, alpha=0.3, color='blue')
@@ -562,7 +562,7 @@ if __name__ == '__main__':
     plt.legend(fontsize=16)
     plt.show()
 
-    #plt.savefig(f"/home/remotelab/sid/Experiments/csp_filter_updated/{sub_id}_num_trees_trial.png")
+    plt.savefig(f"/home/remotelab/sid/codebase/code/PainBiomarker/runs/Experiments/PIB_CSP_RF_held_test/{sub_id}_num_trees_trial.png")
     plt.close()
     ind = np.argmax(max_val)
     best_n_estimators = n_estimators_range[ind]
@@ -620,8 +620,8 @@ if __name__ == '__main__':
     plt.grid("True")
     plt.show()
     # breakpoint()
-    #plt.savefig(f"/home/remotelab/sid/Experiments/csp_filter_updated/{sub_id}_test.png")
-    plt.savefig(f"/home/remotelab/sid/Experiments/Segmenting_2.5_mins/{sub_id}_test_post_2_5.png")
+    plt.savefig(f"/home/remotelab/sid/codebase/code/PainBiomarker/runs/Experiments/PIB_CSP_RF_held_test/{sub_id}_test.png")
+    # plt.savefig(f"/home/remotelab/sid/Experiments/Segmenting_2.5_mins/{sub_id}_test_post_2_5.png")
     # plt.savefig("0b5a2e_test.png")
     
     plt.close()

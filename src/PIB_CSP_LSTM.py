@@ -1,5 +1,7 @@
 import numpy as np
 import h5py as hp
+import re
+import pandas as pd
 import scipy.linalg as la
 import torch
 import pdb
@@ -20,6 +22,10 @@ from sklearn.model_selection import KFold
 from sklearn.model_selection import StratifiedKFold
 import warnings
 warnings.filterwarnings("ignore")
+'''
+ this script is separate for all subjects except 822e28
+ Personalizzed label binaralization and classification using LSTM
+'''
 
 def PIB(data):
     # Apply filtering to data
@@ -188,23 +194,7 @@ def rf_classification(train_set, test_set, y_train, y_test, sub_id):
         acc_min.append(min(accuracy_sample_size))
     #print(f"Maximum mean accuracy of {sub_id} is {np.max(acc)}")
     return np.max(acc)
-    # std_acc = np.array(std_acc)
-    # plt.plot(np.arange(0,len(acc)),acc, label=f'Mean accuracy (Max : {np.max(acc)})',linewidth=3)
-    # plt.fill_between(np.arange(0,len(acc)), acc-(std_acc/2), acc + (std_acc/2), alpha=0.3, color='blue')
 
-    # plt.title("Accuracy vs test samples", fontsize=20)
-    # plt.xlabel("Number of test samples", fontsize=20)
-    # plt.legend(loc='upper right', fontsize=14)
-    # plt.ylabel("Accuracy", fontsize=20)
-    # # plt.ylim(0,1.5)
-    # plt.grid("True")
-    # plt.show()
-    # # breakpoint()
-    # #plt.savefig(f"/home/remotelab/sid/Experiments/csp_filter_updated/{sub_id}_test.png")
-    # plt.savefig(f"/home/remotelab/sid/Experiments/csp_pib/c5a5e9/{sub_id}_test.png")
-    # # plt.savefig("0b5a2e_test.png")
-    
-    # plt.close()
 def forward(sub_id):
     pain_data_train=[]
     nopain_data_train = []
@@ -215,16 +205,27 @@ def forward(sub_id):
     combined_matrix_data = []
     combined_scores = []
     for index in tqdm.tqdm(range(len(h5files))): #/Users/sidharth/Desktop/Herron_lab/spring_2024/data/extended_dataset/0b5a2e/0b5a2e_2.h5
+        
         file_name = h5files[index].split('/')[-1]
-
-        day = file_name.split('.h5')[0].split('_')[-1]
+        if sub_id != '6c29e3':
+            day = file_name.split('.h5')[0].split('_')[-1]
+        else:
+            dayX=file_name.split('_')[1]
+            day_match = re.search(r'\d+', dayX)
+            day = day_match.group() if day_match else None 
         matpath=h5files[index]
         data_h5=hp.File(matpath,'r')
         matrix = data_h5['neural_windows'][()]
         
         combined_matrix_data.append(matrix)
-        scores = data_h5['intensity'][:]
-        combined_scores.append(scores)
+        if sub_id != '6c29e3':
+            scores = data_h5['intensity'][:]
+            combined_scores.append(scores)
+        if sub_id == '6c29e3':
+            # breakpoint()
+            csv_scores = survey_response = pd.read_excel("/home/remotelab/sid/codebase/data/VAS_timestamps/6c29e3_MPQ_survey_responses.xlsx", sheet_name = None)
+            total_scores = csv_scores['Sheet1'][csv_scores['Sheet1']['day'] == int(day)]['Total'].tolist()
+            combined_scores.append(total_scores)
         
     combined_scores = np.concatenate(combined_scores)
     #---------------c5a5e9-----------------------------------------------------
@@ -298,6 +299,19 @@ def forward(sub_id):
         ignore_indices = [x for x in range(len (combined_scores)) if combined_scores[x] in ignore_scores]
         selected_indices = [x for x in range(len(combined_scores)) if x not in ignore_indices]
 
+
+    if sub_id == '6c29e3':
+        '''
+        The sorted scores are array([ 41,  43,  43,  44,  46,  48,  48,  50,  53,  56,  60,  60,  62, 89,  98, 117]). It is distributed in the range [41,117]
+        The median turns out to be 51.5. There is atleast 12 score difference between right half and left half if we ignore 50,53,56
+        The unsorted are array([ 46,  44,  48,  98,  60,  56,  43,  43,  41,  62, 117,  89,  60, 48,  50,  53]) 
+
+        '''
+        threshold = 80
+        ignore_scores = [48, 50,53,56,60,62]
+        ignore_indices = [x for x in range(len (combined_scores)) if combined_scores[x] in ignore_scores]
+        selected_indices = [x for x in range(len(combined_scores)) if x not in ignore_indices]
+
          
      
 #-------------------------------------------------------------------------------
@@ -315,19 +329,6 @@ def forward(sub_id):
         ecog_data = combined_matrix_data_selected[j][~np.all(combined_matrix_data_selected[j]==0, axis = 1)]
         TOTAL_DATA.append(ecog_data)
         scores.append(labels[j])
-
-
-    # for j in range(combined_matrix_data_selected.shape[0]):
-    #     ecog_data = combined_matrix_data_selected[j][~np.all(combined_matrix_data_selected[j]==0, axis = 1)]
-    #     augmented_data=sliding_window_augmentation(ecog_data)
-    #     for subarrays in augmented_data:
-    #         data = subarrays
-    #         #data = PIB(subarrays)
-    #         if data.shape[0] == 0:
-    #             continue
-    #         TOTAL_DATA.append(data)
-    #         scores.append(labels[j])
-    # breakpoint()
     TOTAL_DATA = np.array(TOTAL_DATA)
     scores = np.array(scores)
     # breakpoint()
@@ -446,8 +447,7 @@ def remove_outliers_iqr(epoch_data):
     return filtered_data
 
 if __name__ == '__main__':
-    #this script is separate for subject 822e28 : personalizzed label binaralizationa and classification using LSTM
-    
+
     #with open('822e28.txt', 'w') as f:
         #sys.stdout = f
         parser = argparse.ArgumentParser()
@@ -456,58 +456,34 @@ if __name__ == '__main__':
         args = parser.parse_args()
         sub_id = args.sub
         total_data, total_labels = forward(sub_id) #get total data 
-        np.random.seed(42)
-        #create a separate function here
-
-        indices_sorted_labels =  np.argsort(total_labels)[::-1] #positive first
-        total_data = total_data[indices_sorted_labels]
-        total_labels = total_labels[indices_sorted_labels]
-        # breakpoint()
-        max_len_pos = np.max([x for x in range(len(total_labels)) if total_labels[x] == 1]) #generalize this
-        positive_total_data = total_data[:max_len_pos+1]
-        pos_labels = total_labels[:max_len_pos+1]
-        negative_total_data = total_data[max_len_pos + 1 :]
-        neg_labels = total_labels[max_len_pos+1:]
-        n_folds = min(len(pos_labels), len(neg_labels))
-        # breakpoint()
+        breakpoint()
+        skf = KFold(n_splits=8)
+        skf.get_n_splits(total_data)
+        mean_accuracies_fold = []
+        #breakpoint()
+        print(f"Total number of folds = {skf.n_splits}")
+        #components_list = [2**i for i in range(1,int(grouped_data.shape[-2]).bit_length())]
+        #components_list.append(grouped_data.shape[-2])
         mean_val_accuracies_fold = []
         mean_train_accuracies_fold = []
         val_acs_fold_ = []
-        train_acs_fold_ =[] 
-        for fold in range(n_folds):
-            print("Fold ", fold+1)
-            test_arr = []
-            test_labels = []
-            train_arr = []
-            train_labels = []
-            test_set_ind_pos = np.random.randint(max_len_pos+1)
-            test_arr.append(positive_total_data[test_set_ind_pos])
-            test_labels.append(pos_labels[test_set_ind_pos])
-            train_arr.append(np.concatenate([positive_total_data[:test_set_ind_pos],positive_total_data[test_set_ind_pos+1:]], axis = 0))
-            train_labels.append(np.concatenate([pos_labels[:test_set_ind_pos],pos_labels[test_set_ind_pos+1:]], axis = 0))
-            train_neg_indices = np.random.choice(np.arange(len(neg_labels)), size = n_folds - 1, replace = False)
-            train_arr.append(negative_total_data[train_neg_indices])
-            train_labels.append(neg_labels[train_neg_indices])
+        train_acs_fold_ = []
+        for i, (train_indices, test_indices) in enumerate(skf.split(total_data, total_labels)):
+            print(f"Fold {i}")
             # breakpoint()
-            test_arr.extend(negative_total_data[i] for i in range(len(neg_labels)) if i not in train_neg_indices)
-            test_labels.extend(neg_labels[i] for i in range(len(neg_labels)) if i not in train_neg_indices)
 
-            train_arr = np.array(train_arr)
-            train_arr = train_arr.reshape(-1, train_arr.shape[-2], train_arr.shape[-1])
+            #split it
+
+            train_arr = total_data[train_indices]
         
-            test_arr = np.array(test_arr)
-            train_labels = np.array(train_labels)
-            train_labels = train_labels.reshape(-1)
-            test_labels = np.array(test_labels)
-
-            #slice into 10s epochs
+            train_labels = total_labels[train_indices]
             augmented_train_arr = []
             y_train = []
 
             print("Computing power in band for train set")
             for j in range(train_arr.shape[0]):
                 ecog_data = train_arr[j][~np.all(train_arr[j]==0, axis = 1)]
-                augmented_data=sliding_window_augmentation(ecog_data)
+                augmented_data=sliding_window_augmentation(ecog_data, sub_id)
                 for subarrays in augmented_data:
                     data = subarrays
                     data = PIB(subarrays)
@@ -515,24 +491,31 @@ if __name__ == '__main__':
                         continue
                     augmented_train_arr.append(data)
                     y_train.append(train_labels[j])
-           
+            # breakpoint()
             augmented_train_arr = np.array(augmented_train_arr)
             y_train = np.array(y_train)
+
 
             pos_indices = [ind for ind in range(len(y_train)) if y_train[ind] == 1]
             neg_indices = [ind for ind in range(len(y_train)) if y_train[ind] == 0]
 
-            pain_data_train = augmented_train_arr[pos_indices]
-            nopain_data_train = augmented_train_arr[neg_indices]
-               
-               
+            # breakpoint()
+            pain_data_tr = augmented_train_arr[pos_indices]
+            nopain_data_tr = augmented_train_arr[neg_indices]
+
+            # print(f"pain data shape train : {pain_data_tr.shape}")
+            # print(f"No pain data shape train: {nopain_data_tr.shape}")
+        
+            test_arr = total_data[test_indices]
+        
+            test_labels = total_labels[test_indices]
             augmented_test_arr = []
             y_test = []
 
             print("Computing power in band for test set")
             for j in range(test_arr.shape[0]):
                 ecog_data = test_arr[j][~np.all(test_arr[j]==0, axis = 1)]
-                augmented_data=sliding_window_augmentation(ecog_data)
+                augmented_data=sliding_window_augmentation(ecog_data, sub_id)
                 for subarrays in augmented_data:
                     data = subarrays
                     data = PIB(subarrays)
@@ -542,24 +525,23 @@ if __name__ == '__main__':
                     y_test.append(test_labels[j])
             augmented_test_arr = np.array(augmented_test_arr)
             y_test = np.array(y_test)
+            # print(f"test data shape : {test_arr.shape}")
+            # print(f" pos labels in test : {len([x for x in range(len(y_test)) if y_test[x] == 1])}")
+            # print(f" neg labels in test : {len([x for x in range(len(y_test)) if y_test[x] == 0])}")
             # breakpoint()
-            #get csp 
-            train_set, test_set = calc_csp(pain_data_train, nopain_data_train, augmented_test_arr, components='full')
-            
+            print("Computing CSPs")
+            train_set, test_set = calc_csp(pain_data_tr, nopain_data_tr, augmented_test_arr, components='full')
+            # breakpoint()
+            # train_set = train_set.reshape(train_set.shape[0],-1) 
+            # test_set = test_set.reshape(test_set.shape[0],-1) 
             train_set = torch.from_numpy(train_set.reshape(-1, 30, train_set.shape[-2] * train_set.shape[-1])).to(torch.float32)
+            
             test_set = torch.from_numpy(test_set.reshape(-1, 30, test_set.shape[-2] * test_set.shape[-1])).to(torch.float32)
-            # null hypothesis
-            # np.random.shuffle(y_train)
-
-            y_train = torch.from_numpy(y_train.reshape(-1, 30))
+            y_train =  torch.from_numpy(y_train.reshape(-1, 30))
             y_test = torch.from_numpy(y_test.reshape(-1, 30))
 
-
-
-    
-            #pass it to lstm to classify
             num_epochs = 100
-            input_dims = train_set.shape[-1] #later transposing the input
+            input_dims = train_set.shape[-1] 
             model = lstm_classification(input_dims)
 
             criterion = nn.BCELoss()  # Use BCEWithLogitsLoss to avoid separate sigmoid
@@ -584,31 +566,22 @@ if __name__ == '__main__':
                     if val_accuracy >= best_val:
                         best_val = val_accuracy
                         best_epoch = epoch
-                        print(f"Best performance at {best_epoch+1}, val acc : {best_val}")
+                        print(f"Best performance at {best_epoch}, val acc : {best_val}")
                         ckpt = {
                             'epoch' : epoch,
                             'model_state_dict' : model.state_dict(),
                             'optimizer_state_dict': optimizer.state_dict()
                                 }
-                        torch.save(ckpt, f'best_lstm_{sub_id}_fold{fold}.pth')
+                        torch.save(ckpt, f'/home/remotelab/sid/codebase/code/PainBiomarker/runs/model_weights/best_lstm_{sub_id}_fold{i}.pth')
 
                 # if train_accuracy < val_accuracy:
                 #     break
             
             val_acs_fold_.append(val_accs)
             train_acs_fold_.append(tr_accs)
-            # plt.plot(np.arange(num_epochs), tr_accs, label='Train accuracy')
-            # plt.plot(np.arange(num_epochs), val_accs, label='Val accuracy')
-            # plt.title(f"Fold {fold+1}")
-            # plt.xlabel("Epochs")
-            # plt.ylabel("Acc")
-            # plt.legend()
-            # plt.grid("True")
-            # plt.show()
-            # plt.savefig(f"822e28_lstm_pib_fold_{fold}.png")
-            # plt.close()
+
             model = lstm_classification(input_dims)
-            checkpoint = torch.load(f'best_lstm_{sub_id}_fold{fold}.pth')
+            checkpoint = torch.load(f'/home/remotelab/sid/codebase/code/PainBiomarker/runs/model_weights/best_lstm_{sub_id}_fold{i}.pth')
             model.load_state_dict(checkpoint['model_state_dict'])
 
             _, valacc = validate_model(model, criterion, test_set, y_test)
@@ -643,17 +616,14 @@ if __name__ == '__main__':
             # Calculate mean and standard deviation for the filtered data
             mean_tr.append(np.mean(filtered_data))
             std_tr.append(np.std(filtered_data))        
-        breakpoint()
+        # breakpoint()
         mean_vals = np.array(mean_vals)
         std_vals = np.array(std_vals)
         mean_tr = np.array(mean_tr)
         std_tr = np.array(std_tr)
 
-
-
-
         # Plotting
-        epochs = np.arange(data.shape[1])  # 100 epochs
+        epochs = np.arange(100)  # 100 epochs
 
         plt.plot(epochs, mean_vals, label='Validation', color= 'orange')
         plt.plot(epochs, mean_tr, label='Train', color = 'blue')
@@ -661,206 +631,25 @@ if __name__ == '__main__':
         plt.fill_between(epochs, mean_tr - std_tr/2, mean_tr + std_tr/2, color='blue', alpha=0.3)
 
         # plt.title('Mean Accuracy with Std Dev (Outliers Removed)')
+        plt.title(f'{sub_id}')
         plt.xlabel('Epochs')
         plt.ylabel('Accuracy')
         plt.legend(loc='lower right')
         plt.grid()
         plt.show()
-        plt.savefig(f"{sub_id}_lstm_pib_mean_all_epoch_mod.png")
-        
+        plt.savefig(f"/home/remotelab/sid/codebase/code/PainBiomarker/runs/Experiments/PIB_CSP_LSTM/{sub_id}_lstm_pib_mean_all_epoch_mod.png")
+        plt.close()
 
+        print(f"Mean val accuracy across all fold is {np.mean(mean_val_accuracies_fold)}")
+        xaxis = [f"Fold {i}" for i in range(1,len(mean_val_accuracies_fold)+1)]
 
-
-
-
-        # mean_train_acs = np.mean(train_acs_fold_, axis=0)
-        # mean_val_acs = np.mean(val_acs_fold_, axis=0)
-        # window_size = 5
-        # std_train_acs = [np.std(train_acs_fold_[i:i+window_size]) for i in range(len(train_acs_fold_) - window_size + 1)]
-        # std_val_acs = [np.std(val_acs_fold_[i:i+window_size]) for i in range(len(val_acs_fold_) - window_size + 1)]
-
-        # #std_train_acs = np.std(train_acs_fold_, axis=0)
-        # #std_val_acs = np.std(val_acs_fold_, axis=0)
-        # plt.plot(np.arange(num_epochs), np.mean(val_acs_fold_, axis = 0), label = 'validation')
-        # plt.plot(np.arange(num_epochs), np.mean(train_acs_fold_, axis = 0), label = 'training')
-        # plt.fill_between(np.arange(num_epochs), 
-        #          mean_train_acs - std_train_acs/2, 
-        #          mean_train_acs + std_train_acs/2, 
-        #          color='blue', alpha=0.2)
-        # plt.fill_between(np.arange(num_epochs), 
-        #          mean_val_acs - std_val_acs/2, 
-        #          mean_val_acs + std_val_acs/2, 
-        #          color='orange', alpha=0.2)
-        # plt.title('Null hypothesis')
-        # plt.xlabel('Epochs')
-        # plt.ylabel("Accuracy")
-        # plt.legend(loc='lower left')
-        # plt.grid()
-        # plt.show()
-        # plt.savefig("822e28_lstm_pib_mean_all_epoch_null.png")
-
-
-
-        
-
-
-
-        #print(f"Mean val accuracy across all fold is {np.mean(mean_val_accuracies_fold)}")
-        #xaxis = ['Fold 1','Fold 2','Fold 3','Fold 4','Fold 5','Fold 6','Fold 7','Fold 8','Fold 9',]
-        # plt.bar(xaxis, mean_val_accuracies_fold, label = 'val accuracy')
+        plt.bar(xaxis, mean_val_accuracies_fold, label = 'val accuracy')
         # plt.plot(np.arange(n_folds), mean_train_accuracies_fold, label = 'mean train accuracy')
 
-        # plt.xlabel("Folds")
-        # plt.ylabel("Accuracy")
-        # plt.grid('True')
-        # plt.legend()
-        # plt.show()
-        # plt.savefig("822e28_lstm_pib.png")
-
-        # components = total_data.shape[-2]
-        # print(f"Mean accuracy for subject {sub_id} is {np.mean(mean_accuracies_fold)} with components of CSP = {components}")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        # #grouped_data = total_data.reshape(total_data.shape[0]//30, 30, total_data.shape[1], 6)
-        # #grouped_labels = total_labels.reshape(total_labels.shape[0]//30, -1) #Ensures one of each trial goes to either train or test, no data leakage
-
-        # '''
-        # sequence length of input to LSTM should be 30, (300/10)
-        # input_dimension should be csp_components * 6
-        # input dim to LSTM (L = 30, H_in)
-        # out_dim (L, D*H_in), for bidirectional, D = 2, else 1
-
-        # For binary classification, you can put a dense layer nn.Conv1d(D*H_in, num_classes)
-        # '''
-        # #kf = KFold(n_splits = total_data.shape[0]//4) # leave one trial out cross validation
-        # skf = StratifiedKFold(n_splits=7, shuffle=True, random_state=42)
-        # skf.get_n_splits(total_data)
-        # mean_accuracies_fold = []
-        # #breakpoint()
-        # print(f"Total number of folds = {skf.n_splits}")
-        # #components_list = [2**i for i in range(1,int(grouped_data.shape[-2]).bit_length())]
-        # #components_list.append(grouped_data.shape[-2])
-        # components_list = ['full']
-        # for components in components_list:
-
-        #     for i, (train_indices, test_indices) in enumerate(skf.split(total_data, total_labels)):
-        #         print(f"Fold {i}")
-        #         # breakpoint()
-
-        #         #split it
-
-        #         train_arr = total_data[train_indices]
-            
-        #         train_labels = total_labels[train_indices]
-        #         augmented_train_arr = []
-        #         y_train = []
-
-        #         print("Computing power in band for train set")
-        #         for j in range(train_arr.shape[0]):
-        #             ecog_data = train_arr[j][~np.all(train_arr[j]==0, axis = 1)]
-        #             augmented_data=sliding_window_augmentation(ecog_data)
-        #             for subarrays in augmented_data:
-        #                 data = subarrays
-        #                 data = PIB(subarrays)
-        #                 if data.shape[0] == 0:
-        #                     continue
-        #                 augmented_train_arr.append(data)
-        #                 y_train.append(train_labels[j])
-        #         # breakpoint()
-        #         augmented_train_arr = np.array(augmented_train_arr)
-        #         y_train = np.array(y_train)
-
-
-        #         pos_indices = [ind for ind in range(len(y_train)) if y_train[ind] == 1]
-        #         neg_indices = [ind for ind in range(len(y_train)) if y_train[ind] == 0]
-
-        #         # breakpoint()
-        #         pain_data_tr = augmented_train_arr[pos_indices]
-        #         nopain_data_tr = augmented_train_arr[neg_indices]
-
-        #         # print(f"pain data shape train : {pain_data_tr.shape}")
-        #         # print(f"No pain data shape train: {nopain_data_tr.shape}")
-            
-        #         test_arr = total_data[test_indices]
-            
-        #         test_labels = total_labels[test_indices]
-        #         augmented_test_arr = []
-        #         y_test = []
-
-        #         print("Computing power in band for test set")
-        #         for j in range(test_arr.shape[0]):
-        #             ecog_data = test_arr[j][~np.all(test_arr[j]==0, axis = 1)]
-        #             augmented_data=sliding_window_augmentation(ecog_data)
-        #             for subarrays in augmented_data:
-        #                 data = subarrays
-        #                 data = PIB(subarrays)
-        #                 if data.shape[0] == 0:
-        #                     continue
-        #                 augmented_test_arr.append(data)
-        #                 y_test.append(test_labels[j])
-        #         augmented_test_arr = np.array(augmented_test_arr)
-        #         y_test = np.array(y_test)
-        #         # print(f"test data shape : {test_arr.shape}")
-        #         # print(f" pos labels in test : {len([x for x in range(len(y_test)) if y_test[x] == 1])}")
-        #         # print(f" neg labels in test : {len([x for x in range(len(y_test)) if y_test[x] == 0])}")
-        #         # breakpoint()
-        #         print("Computing CSPs")
-        #         train_set, test_set = calc_csp(pain_data_tr, nopain_data_tr, augmented_test_arr, components)
-        #         # breakpoint()
-        #         # train_set = train_set.reshape(train_set.shape[0],-1) 
-        #         # test_set = test_set.reshape(test_set.shape[0],-1) 
-        #         train_set = torch.from_numpy(train_set.reshape(-1, 30, train_set.shape[-2] * train_set.shape[-1])).to(torch.float32)
-                
-        #         test_set = torch.from_numpy(test_set.reshape(-1, 30, test_set.shape[-2] * test_set.shape[-1])).to(torch.float32)
-        #         y_train =  torch.from_numpy(y_train.reshape(-1, 30))
-        #         y_test = torch.from_numpy(y_test.reshape(-1, 30))
-
-        #         num_epochs = 100
-        #         input_dims = hidden_dims = train_set.shape[-1]
-
-        #         model = lstm_classification(input_dims, hidden_dims, num_classes = 1)
-        #         criterion = nn.BCEWithLogitsLoss()  # Use BCEWithLogitsLoss to avoid separate sigmoid
-        #         optimizer = optim.Adam(model.parameters(), lr=0.0001)
-        #         tr_accs = []
-        #         val_accs = []
-        #         for epoch in range(num_epochs):
-        #             train_loss, train_accuracy = train_model(model, criterion, optimizer, train_set, y_train)
-        #             tr_accs.append(train_accuracy)
-        
-        #             print(f'Epoch {epoch+1}/{num_epochs} | Train Loss: {train_loss:.4f} | train_acc : {train_accuracy:.4f}')
-
-        #             val_loss, val_accuracy = validate_model(model, criterion, test_set, y_test)
-        #             val_accs.append(val_accuracy)
-        #             print(f'Validation Loss: {val_loss:.4f} | val_acc : {val_accuracy:.4f}')
-        #             # if train_accuracy < val_accuracy:
-        #             #     break
-
-                
-        #         mean_accuracies_fold.append(val_accuracy)
-
-        #         # print(f"Maximum mean accuracy for subject {sub_id} for Fold {i} is {max_mean_acc}")
-        #     components = total_data.shape[-2]
-        #     print(f"Mean accuracy for subject {sub_id} is {np.mean(mean_accuracies_fold)} with components of CSP = {components}")
-
-        
-
+        plt.xlabel("Folds")
+        plt.ylabel("Accuracy")
+        plt.grid('True')
+        plt.legend()
+        plt.show()
+        plt.savefig(f"/home/remotelab/sid/codebase/code/PainBiomarker/runs/Experiments/PIB_CSP_LSTM/{sub_id}_bar_val_lstm.png")
+        plt.close()

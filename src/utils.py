@@ -22,11 +22,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 import torchvision
+import json
 from torchvision import transforms
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, confusion_matrix, precision_score, recall_score, ConfusionMatrixDisplay
 from sklearn.model_selection import RandomizedSearchCV, train_test_split
 from scipy.stats import randint
+
+
+
+def parse_json(config_file):
+    with open(config_file, 'r') as files:
+        cfg = json.load(files)
+        return cfg
 
 
 def CSP(*tasks):

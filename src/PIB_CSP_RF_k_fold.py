@@ -4,7 +4,9 @@ import torch
 import pdb
 import random
 import tqdm
+import json
 import argparse
+from utils import parse_json
 import scipy.signal as signal
 from utils import load_dataset, sliding_window_augmentation, forward, PIB
 import matplotlib.pyplot as plt
@@ -13,6 +15,16 @@ from sklearn.metrics import accuracy_score, confusion_matrix, precision_score, r
 from sklearn.model_selection import KFold
 import warnings
 warnings.filterwarnings("ignore")
+
+'''
+This script contains the leave one trial out cross validation using PIB_CSP_RF method for all the subjects
+
+The usage of this script is 
+
+python PIB_CSP_RF_k_fold.py --sub 822e28 > /home/remotelab/sid/codebase/code/PainBiomarker/runs/Experiments/PIB_CSP_RF/sub.txt
+'''
+
+
 
 def PIB(data):
     # Apply filtering to data
@@ -114,7 +126,7 @@ def calc_csp(pain_data_train, nopain_data_train, test_data, components = 'full')
 
     csp_filter = CSP(pain_data_train, nopain_data_train) #csp_filter[0] is pain, csp_filter[1] is nopain
     #csp_filter has shape (2, components, num_vecs) 
-    if components != 'full':
+    if components != 'max':
         
         csp_filter_mod = []
         csp_filter_mod.append(np.concatenate([csp_filter[0][:components//2, :], csp_filter[0][-components//2:, :]], axis = 0))
@@ -182,35 +194,20 @@ def rf_classification(train_set, test_set, y_train, y_test, sub_id):
         acc_min.append(min(accuracy_sample_size))
     #print(f"Maximum mean accuracy of {sub_id} is {np.max(acc)}")
     return np.max(acc)
-    # std_acc = np.array(std_acc)
-    # plt.plot(np.arange(0,len(acc)),acc, label=f'Mean accuracy (Max : {np.max(acc)})',linewidth=3)
-    # plt.fill_between(np.arange(0,len(acc)), acc-(std_acc/2), acc + (std_acc/2), alpha=0.3, color='blue')
-
-    # plt.title("Accuracy vs test samples", fontsize=20)
-    # plt.xlabel("Number of test samples", fontsize=20)
-    # plt.legend(loc='upper right', fontsize=14)
-    # plt.ylabel("Accuracy", fontsize=20)
-    # # plt.ylim(0,1.5)
-    # plt.grid("True")
-    # plt.show()
-    # # breakpoint()
-    # #plt.savefig(f"/home/remotelab/sid/Experiments/csp_filter_updated/{sub_id}_test.png")
-    # plt.savefig(f"/home/remotelab/sid/Experiments/csp_pib/c5a5e9/{sub_id}_test.png")
-    # # plt.savefig("0b5a2e_test.png")
-    
-    # plt.close()
-
-
-
 
 if __name__ == '__main__':
 
+    #load components from JSON
     
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--sub", help = "Enter the subject id")
-
+    parser.add_argument("--config", help = "location of config file")
     args = parser.parse_args()
     sub_id = args.sub
+    config_file = args.config
+    cfg = parse_json(config_file)
+    
     total_data, total_labels = forward(sub_id) #get sliced data 
     # breakpoint()
     grouped_data = total_data.reshape(total_data.shape[0]//30, 30, total_data.shape[1], 6)
@@ -219,9 +216,15 @@ if __name__ == '__main__':
     kf.get_n_splits(grouped_data)
     mean_accuracies_fold = []
     print(f"Total number of folds = {grouped_data.shape[0]}")
-    # components_list = [2**i for i in range(1,int(grouped_data.shape[-2]).bit_length())]
-    # components_list.append(grouped_data.shape[-2])
-    components_list = ['full']
+
+    components_list = cfg.csp.components
+
+    if components_list == ['max']:
+        componenets_list = [grouped_data.shape[-2]]
+    if components_list == ['full']:
+        components_list = [2**i for i in range(1,int(grouped_data.shape[-2]).bit_length())]
+        components_list.append(grouped_data.shape[-2])
+    # components_list = ['full']
     for components in components_list:
 
         for i, (train_indices, test_indices) in enumerate(kf.split(grouped_data)):
@@ -251,10 +254,10 @@ if __name__ == '__main__':
             # print(f" pos labels in test : {len([x for x in range(len(y_test)) if y_test[x] == 1])}")
             # print(f" neg labels in test : {len([x for x in range(len(y_test)) if y_test[x] == 0])}")
             # breakpoint()
-            # train_set, test_set, y_train = calc_csp(pain_data_tr, nopain_data_tr, test_arr, components)
+            train_set, test_set, y_train = calc_csp(pain_data_tr, nopain_data_tr, test_arr, components)
 
-            train_set = train_arr
-            test_set = test_arr
+            # train_set = train_arr
+            # test_set = test_arr
 
             train_set = train_set.reshape(train_set.shape[0],-1) 
         
@@ -265,7 +268,7 @@ if __name__ == '__main__':
 
             # print(f"Maximum mean accuracy for subject {sub_id} for Fold {i} is {max_mean_acc}")
         # components = grouped_data.shape[-2]
-        print(f"Mean accuracy for subject without CSP {sub_id} is {np.mean(mean_accuracies_fold)} with components of CSP = {components}")
+        print(f"Mean accuracy for subject CSP {sub_id} is {np.mean(mean_accuracies_fold)} with components of CSP = {components}")
 
     
 
