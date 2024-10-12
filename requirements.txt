@@ -1,0 +1,10 @@
+sklearn
+h5py
+numpy
+pandas
+scipy
+pytorch
+Sklearn_PyTorch
+seaborn
+matplotlib
+
